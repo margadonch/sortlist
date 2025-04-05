@@ -1,110 +1,121 @@
 package main
 
 import (
+    "database/sql"
     "fmt"
-    "math/rand"
-    "net/http"
     "sort"
     "strings"
-    "time"
+
+    _ "github.com/go-sql-driver/mysql"      // MySQL driver
+    _ "github.com/lib/pq"                   // PostgreSQL driver
+    _ "github.com/nakagami/firebirdsql"     // Firebird driver
+    _ "github.com/mattn/go-sqlite3"         // SQLite driver
 )
 
-// Data represents a single data point from a provider.
-type Data struct {
-    Provider string
-    Value    int
-}
-
-// BubbleSort implements the bubble sort algorithm.
-func BubbleSort(numbers []int) []int {
+// SortList sorts a slice of integers in ascending or descending order.
+func SortList(numbers []int, ascending bool) []int {
+    // Make a copy of the slice to avoid modifying the original
     sorted := make([]int, len(numbers))
     copy(sorted, numbers)
-    n := len(sorted)
-    for i := 0; i < n; i++ {
-        for j := 0; j < n-i-1; j++ {
-            if sorted[j] > sorted[j+1] {
-                sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-            }
+
+    // Sort in ascending order
+    sort.Ints(sorted)
+
+    // Reverse the order if descending is required
+    if !ascending {
+        for i, j := 0, len(sorted)-1; i < j; i, j = i+1, j-1 {
+            sorted[i], sorted[j] = sorted[j], sorted[i]
         }
     }
+
     return sorted
 }
 
-// SortList sorts a slice of integers using the specified algorithm.
-func SortList(numbers []int, algorithm string) []int {
-    switch algorithm {
-    case "bubble":
-        return BubbleSort(numbers)
-    case "quick":
-        sort.Ints(numbers) // QuickSort (default in Go)
-        return numbers
-    case "reverse":
-        sort.Sort(sort.Reverse(sort.IntSlice(numbers)))
-        return numbers
-    case "custom1":
-        // Placeholder for a custom sorting algorithm
-        sort.Ints(numbers)
-        return numbers
-    case "custom2":
-        // Placeholder for another custom sorting algorithm
-        sort.Ints(numbers)
-        return numbers
-    default:
-        sort.Ints(numbers) // Default to QuickSort
-        return numbers
-    }
-}
-
-// SimulateProvider simulates a data provider sending random data.
-func SimulateProvider(providerName string, dataChannel chan Data) {
-    for i := 0; i < 10; i++ {
-        dataChannel <- Data{Provider: providerName, Value: rand.Intn(100)}
-        time.Sleep(time.Millisecond * 500) // Simulate delay
-    }
-}
-
-// SendToConsumer sends sorted data to a web portal (consumer).
-func SendToConsumer(sortedData []int) {
-    // Simulate sending data to a web portal
-    fmt.Println("Sending sorted data to web portal:", sortedData)
-    // Example HTTP POST request (replace with actual endpoint)
-    _, err := http.Post("http://example.com/consumer", "application/json", nil)
+// FetchDataFromDB fetches data from a database table.
+func FetchDataFromDB(db *sql.DB, query string) ([]int, error) {
+	rows, err := db.Query(query)
     if err != nil {
-        fmt.Println("Error sending data to consumer:", err)
+        return nil, err
     }
+    defer rows.Close()
+
+    var numbers []int
+    for rows.Next() {
+        var num int
+        if err := rows.Scan(&num); err != nil {
+            return nil, err
+        }
+        numbers = append(numbers, num)
+    }
+    return numbers, nil
+}
+
+// SaveDataToDB saves sorted data into a database table.
+func SaveDataToDB(db *sql.DB, tableName string, data []int) error {
+    // Clear the table before inserting new data
+    _, err := db.Exec(fmt.Sprintf("DELETE FROM %s", tableName))
+    if err != nil {
+        return err
+    }
+
+    // Insert sorted data
+    for _, num := range data {
+        _, err := db.Exec(fmt.Sprintf("INSERT INTO %s (value) VALUES (?)", tableName), num)
+        if err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
 func main() {
-    // Seed random number generator
-    rand.Seed(time.Now().UnixNano())
+    // Connect to the database (example: SQLite)
+    db, err := sql.Open("sqlite3", "example.db")
+    if err != nil {
+        fmt.Println("Error connecting to the database:", err)
+        return
+    }
+    defer db.Close()
 
-    // Create a channel for streaming data
-    dataChannel := make(chan Data)
+    // Fetch data from the database
+    query := "SELECT value FROM numbers"
+    numbers, err := FetchDataFromDB(db, query)
+    if err != nil {
+        fmt.Println("Error fetching data from the database:", err)
+        return
+    }
 
-    // Simulate three providers
-    go SimulateProvider("ProviderA", dataChannel)
-    go SimulateProvider("ProviderB", dataChannel)
-    go SimulateProvider("ProviderC", dataChannel)
+    // If no data in the database, prompt user for input
+    if len(numbers) == 0 {
+        fmt.Println("Enter numbers separated by spaces:")
+        var input string
+        fmt.Scanln(&input)
 
-    // Collect data from providers
-    var numbers []int
-    go func() {
-        for data := range dataChannel {
-            fmt.Printf("Received data from %s: %d\n", data.Provider, data.Value)
-            numbers = append(numbers, data.Value)
+        // Parse input into a slice of integers
+        for _, s := range strings.Fields(input) {
+            var num int
+            fmt.Sscanf(s, "%d", &num)
+            numbers = append(numbers, num)
         }
-    }()
+    }
 
-    // Wait for user input to sort
-    time.Sleep(5 * time.Second) // Simulate data collection period
-    fmt.Println("Choose sorting algorithm (bubble, quick, reverse, custom1, custom2):")
-    var algorithm string
-    fmt.Scanln(&algorithm)
+    // Ask user for sorting order
+    fmt.Println("Sort in ascending order? (yes/no):")
+    var order string
+    fmt.Scanln(&order)
+    ascending := strings.ToLower(order) == "yes"
 
     // Sort the numbers
-    sorted := SortList(numbers, algorithm)
+    sorted := SortList(numbers, ascending)
 
-    // Print and send the sorted array
+    // Print the sorted array
     fmt.Println("Sorted array:", sorted)
-    SendToConsumer(sorted)
+
+    // Save sorted data back to the database
+    err = SaveDataToDB(db, "numbers", sorted)
+    if err != nil {
+        fmt.Println("Error saving data to the database:", err)
+        return
+    }
+    fmt.Println("Sorted data saved to the database.")
 }
