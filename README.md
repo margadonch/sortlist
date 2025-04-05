@@ -87,7 +87,9 @@ Integrate with visualization tools such as:
 - Add graphical visualization of sorting steps.
 
 ## License
-This project is licensed under the MIT License. Feel free to use, modify, and distribute it as needed.
+This project is licensed under the GNU General Public License v3.0. You may copy, distribute, and modify the software as long as you track changes/dates in source files. Any modifications to this project must also be open-sourced under the same license.
+
+For more details, see the [LICENSE](https://www.gnu.org/licenses/gpl-3.0.en.html) file.
 
 ## Contact
 If you have any questions or suggestions, feel free to reach out to me via GitHub.
